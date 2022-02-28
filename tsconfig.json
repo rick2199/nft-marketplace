@@ -6,11 +6,7 @@
     "esModuleInterop": true,
     "outDir": "dist",
     "baseUrl": "./",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -21,14 +17,7 @@
     "isolatedModules": true,
     "jsx": "preserve"
   },
-  "include": [
-    "./scripts",
-    "./test"
-  ],
-  "files": [
-    "./hardhat.config.ts"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["**/*.js", "**/*.jsx", "**/*.ts", "**/*.tsx"],
+  "files": ["./hardhat.config.ts"],
+  "exclude": ["node_modules"]
 }
