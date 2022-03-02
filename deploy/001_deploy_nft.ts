@@ -4,17 +4,15 @@ import { DeployFunction } from "hardhat-deploy/types";
 const func: DeployFunction = async function ({
   getNamedAccounts,
   deployments,
-  network,
 }: HardhatRuntimeEnvironment) {
   const { deployer } = await getNamedAccounts();
-  console.log({ network });
   let nftMarketAddress = "";
   const nftMarket = await deployments.deploy("NFTMarket", {
     from: deployer,
     log: true,
   });
   nftMarketAddress = nftMarket.address;
-  await deployments.deploy("NFT", {
+  const nft = await deployments.deploy("NFT", {
     from: deployer,
     log: true,
     args: [nftMarketAddress],

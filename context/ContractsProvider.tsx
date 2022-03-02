@@ -3,7 +3,7 @@ import { Symfoni, SymfoniProps } from "./__generated__/SymfoniContext";
 
 export interface ContractAddresses {
   nftAddress: string;
-  nftMarketAdress: string;
+  nftMarketAddress: string;
 }
 interface Props extends SymfoniProps {
   addresses: ContractAddresses;

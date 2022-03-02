@@ -1,13 +1,15 @@
 import Header from "../components/header";
 import { ContractsProvider } from "../context/ContractsProvider";
+import { AppProps } from "next/app";
 import "../styles/globals.css";
+import { nftAddress, nftMarketAddress } from "../config";
 
-function MyApp({ Component, pageProps }) {
+const MyApp: React.FC<AppProps> = ({ Component, pageProps }) => {
   return (
     <ContractsProvider
       addresses={{
-        nftAddress: "",
-        nftMarketAdress: "",
+        nftAddress,
+        nftMarketAddress,
       }}
       autoInit
       loadingComponent={<div>Loading...</div>}
@@ -18,6 +20,6 @@ function MyApp({ Component, pageProps }) {
       </main>
     </ContractsProvider>
   );
-}
+};
 
 export default MyApp;

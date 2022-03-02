@@ -14,7 +14,7 @@ export const useNFTMarketContract = () => {
   }
 
   if (contract.instance) {
-    instance = contract.instance.attach(addresses.nftMarketAdress);
+    instance = contract.instance.attach(addresses.nftMarketAddress);
   }
 
   return instance;
