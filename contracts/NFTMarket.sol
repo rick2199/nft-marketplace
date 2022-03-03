@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 
+
 contract NFTMarket is ReentrancyGuard {
     using Counters for Counters.Counter;
     Counters.Counter private _itemIds;
@@ -52,7 +53,6 @@ contract NFTMarket is ReentrancyGuard {
 
         _itemIds.increment();
         uint256 itemId = _itemIds.current();
-
         idToMarketItem[itemId] = MarketItem(
             itemId,
             nftContract,
@@ -62,8 +62,18 @@ contract NFTMarket is ReentrancyGuard {
             price,
             false
         );
+
         IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
 
+        emit MarketItemCreated(
+            itemId,
+            nftContract,
+            tokenId,
+            msg.sender,
+            address(0),
+            price,
+            false
+          );
     }
 
     function createMarketSale(

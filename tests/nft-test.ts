@@ -1,5 +1,4 @@
 import { ethers } from "hardhat";
-import { NFTMarket } from "__generated__/NFTMarket";
 
 describe("NFTMarket", function () {
   it("Should create and execute market sales", async function () {
@@ -37,7 +36,7 @@ describe("NFTMarket", function () {
     const items = await market.fetchMarketItems();
 
     const nfts = await Promise.all(
-      items.map(async (i: NFTMarket.MarketItemStructOutput) => {
+      items.map(async (i: any) => {
         const tokenUri = await nft.tokenURI(i.tokenId);
         let item = {
           price: i.price.toString(),

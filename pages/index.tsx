@@ -3,14 +3,13 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import Web3Modal from "web3modal";
 
-import { nftMarketAddress } from "../config";
+import { nftAddress } from "../config";
 
 import { INFT } from "../types";
 import { useNFTMarketContract } from "../hooks/contracts/useNFTMarketContract";
 import { useNFTContract } from "../hooks/contracts/useNFTContract";
 import { NFTMarket } from "../__generated__/NFTMarket";
 import { NFT } from "__generated__/NFT";
-import Image from "next/image";
 
 export default function Home() {
   const [nfts, setNfts] = useState<INFT[]>([]);
@@ -59,12 +58,14 @@ export default function Home() {
 
     const contract = (ntfMarket as NFTMarket).connect(signer);
     const price = ethers.utils.parseUnits(nft.price.toString(), "ether");
-    const transaction = await (contract as NFTMarket).createMarketSale(
-      nftMarketAddress,
+
+    const transaction = await contract.createMarketSale(
+      nftAddress,
       nft.tokenId,
       { value: price }
     );
     await transaction.wait();
+    loadNFTs();
   }
 
   if (!loading && !nfts.length)
@@ -76,7 +77,7 @@ export default function Home() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
           {nfts.map((nft, i) => (
             <div key={i} className="border shadow rounded-xl overflow-hidden">
-              <Image src={nft.image} alt={nft.name || nft.description} />
+              <img src={nft.image} alt={nft.name || nft.description} />
               <div className="p-4">
                 <p
                   style={{ height: "64px" }}
