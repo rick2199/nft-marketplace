@@ -46,3 +46,6 @@ artifacts
 
 __generated__
 deployments
+
+# Local Netlify folder
+.netlify

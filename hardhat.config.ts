@@ -26,14 +26,20 @@ const config: HardhatUserConfig = {
     hardhat: {
       chainId: 1337,
     },
-    mumbai: {
-      url: `https://polygon-mumbai.infura.io/v3/${projectId}`,
-      accounts: [secret],
+    // mumbai: {
+    //   url: `https://polygon-mumbai.infura.io/v3/${projectId}`,
+    //   accounts: [secret],
+    // },
+    testnet: {
+      url: "https://data-seed-prebsc-1-s1.binance.org:8545",
+      chainId: 97,
+      gasPrice: 20000000000,
+      accounts: { mnemonic: secret },
     },
-    mainnet: {
-      url: `https://polygon-mainnet.infura.io/v3/${projectId}`,
-      accounts: [secret],
-    },
+    // mainnet: {
+    //   url: `https://polygon-mainnet.infura.io/v3/${projectId}`,
+    //   accounts: [secret],
+    // },
   },
   typechain: {
     outDir: "./__generated__",
