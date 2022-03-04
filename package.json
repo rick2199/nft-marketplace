@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "prod": "yarn hardhat react && next build"
+    "lint": "next lint"
   },
   "dependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.5",
