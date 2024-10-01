@@ -3,7 +3,7 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "foundry-app#build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": [".next/**", "!.next/cache/**"]
     },
@@ -13,6 +13,19 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "foundry-app#build": {
+      "inputs": ["apps/foundry-app/src/**"],
+      "outputs": ["apps/foundry-app/out/**"],
+      "cache": false
+    },
+    "foundry-app#lint": {
+      "inputs": ["apps/foundry-app/src/**"],
+      "cache": false
+    },
+    "foundry-app#test": {
+      "inputs": ["apps/foundry-app/test/**", "apps/foundry-app/src/**"],
+      "outputs": []
     }
   }
 }
