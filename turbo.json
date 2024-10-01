@@ -3,7 +3,7 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": ["^build", "foundry-app#build"],
+      "dependsOn": ["^build", "contracts#build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": [".next/**", "!.next/cache/**"]
     },
@@ -14,17 +14,17 @@
       "cache": false,
       "persistent": true
     },
-    "foundry-app#build": {
-      "inputs": ["apps/foundry-app/src/**"],
-      "outputs": ["apps/foundry-app/out/**"],
+    "contracts#build": {
+      "inputs": ["apps/contracts/src/**"],
+      "outputs": ["apps/contracts/out/**"],
       "cache": false
     },
-    "foundry-app#lint": {
-      "inputs": ["apps/foundry-app/src/**"],
+    "contracts#lint": {
+      "inputs": ["apps/contracts/src/**"],
       "cache": false
     },
-    "foundry-app#test": {
-      "inputs": ["apps/foundry-app/test/**", "apps/foundry-app/src/**"],
+    "contracts#test": {
+      "inputs": ["apps/contracts/test/**", "apps/contracts/src/**"],
       "outputs": []
     }
   }
