@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
 
 /**
  * @title Marketplace Contract
@@ -11,7 +12,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  * @notice This contract allows users to list and purchase NFTs
  * @dev Inherits from ReentrancyGuard to prevent reentrancy attacks
  */
-contract Marketplace is ReentrancyGuard {
+contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -27,6 +28,7 @@ contract Marketplace is ReentrancyGuard {
     error Marketplace__AuctionEnded();
     error Marketplace__AuctionOngoing();
     error Marketplace__BidNotHighEnough();
+    error Marketplace__AuctionNotFound();
 
     /*//////////////////////////////////////////////////////////////
                                  TYPES
@@ -51,6 +53,7 @@ contract Marketplace is ReentrancyGuard {
     }
 
     struct Auction {
+        uint256 listingItemId;
         uint256 startPrice;
         address payable highestBidder;
         uint256 highestBid;
@@ -66,11 +69,13 @@ contract Marketplace is ReentrancyGuard {
     uint256 private listingItemCount;
     address private constant ZERO_ADDRESS = address(0);
 
+    Auction[] private auctionHeap; // Min-heap to store auctions by endTime
+
     mapping(uint256 listingItemId => ListingItem listingItem) private listingItems;
     mapping(uint256 => Offer[]) public offers;
     mapping(uint256 => PriceHistory[]) public priceHistories;
-    mapping(uint256 => Auction) public auctions;
-    mapping(address => uint256) public pendingReturns;
+    mapping(address accountToRefund => uint256 amountToRefund) public pendingReturns;
+    mapping(uint256 listingItemId => uint256 auctionIdx) public auctionIndex;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -344,24 +349,65 @@ contract Marketplace is ReentrancyGuard {
         if (listingItem.seller != msg.sender) {
             revert Marketplace__MustBeSeller();
         }
-
-        auctions[listingItemId] = Auction({
+        Auction memory newAuction = Auction({
+            listingItemId: listingItemId,
             startPrice: startPrice,
-            highestBidder: payable(ZERO_ADDRESS),
+            highestBidder: payable(address(0)),
             highestBid: 0,
             endTime: block.timestamp + duration,
             ended: false
         });
 
-        emit AuctionStarted(listingItemId, startPrice, auctions[listingItemId].endTime);
+        // Insert the auction into the min-heap
+        auctionHeap.push(newAuction);
+        // Update the auction index mapping
+        uint256 index = auctionHeap.length - 1;
+        auctionIndex[listingItemId] = index;
+        // Heapify up to maintain the min-heap property
+        _heapifyUp(index);
+
+        emit AuctionStarted(listingItemId, startPrice, newAuction.endTime);
+    }
+
+    /**
+     * @notice Chainlink Keeper's checkUpkeep function
+     * @dev Only checks the first auction in the linked list (the soonest to expire)
+     */
+    function checkUpkeep(bytes calldata /* checkData */ )
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        if (auctionHeap.length > 0) {
+            Auction memory soonestAuction = auctionHeap[0];
+
+            if (block.timestamp >= soonestAuction.endTime && !soonestAuction.ended) {
+                upkeepNeeded = true;
+                performData = abi.encode(soonestAuction.listingItemId);
+            }
+        }
+    }
+
+    /**
+     * @notice Chainlink Keeper's performUpkeep function
+     * @param performData The auction ID to end (encoded by checkUpkeep)
+     */
+    function performUpkeep(bytes calldata performData) external override nonReentrant {
+        uint256 listingItemId = abi.decode(performData, (uint256));
+        endAuction(listingItemId);
     }
 
     /**
      * @notice End an auction and transfer the NFT to the highest bidder
      * @param listingItemId The ID of the listing item being auctioned
      */
-    function endAuction(uint256 listingItemId) external nonReentrant {
-        Auction storage auction = auctions[listingItemId];
+    function endAuction(uint256 listingItemId) internal nonReentrant {
+        uint256 index = auctionIndex[listingItemId];
+        if (index >= auctionHeap.length || auctionHeap[index].listingItemId != listingItemId) {
+            revert Marketplace__AuctionNotFound();
+        }
+        Auction storage auction = auctionHeap[index];
         ListingItem storage listingItem = listingItems[listingItemId];
 
         if (block.timestamp < auction.endTime) {
@@ -372,7 +418,11 @@ contract Marketplace is ReentrancyGuard {
             revert Marketplace__AuctionEnded();
         }
 
+        // Mark the auction as ended
         auction.ended = true;
+
+        // Pop the auction from the heap
+        _popAuction();
 
         if (auction.highestBidder != ZERO_ADDRESS) {
             uint256 feeAmount = (auction.highestBid * i_feePercent) / 100;
@@ -395,6 +445,14 @@ contract Marketplace is ReentrancyGuard {
 
             listingItem.sold = true;
 
+            emit ListingItemPurchased(
+                listingItemId,
+                address(listingItem.nft),
+                listingItem.tokenId,
+                sellerProceeds,
+                listingItem.seller,
+                auction.highestBidder
+            );
             emit AuctionEnded(listingItemId, auction.highestBidder, auction.highestBid);
         }
     }
@@ -404,7 +462,15 @@ contract Marketplace is ReentrancyGuard {
      * @param listingItemId The ID of the listing item being auctioned
      */
     function placeBid(uint256 listingItemId) external payable nonReentrant {
-        Auction storage auction = auctions[listingItemId];
+        // Find the auction by looking up the index in the heap
+        uint256 index = auctionIndex[listingItemId];
+
+        // Ensure the index is valid and within bounds
+        if (index >= auctionHeap.length) {
+            revert Marketplace__AuctionNotFound();
+        }
+
+        Auction storage auction = auctionHeap[index];
 
         if (block.timestamp >= auction.endTime) {
             revert Marketplace__AuctionEnded();
@@ -453,6 +519,30 @@ contract Marketplace is ReentrancyGuard {
      */
     function getTotalPrice(uint256 listingItemId) public view returns (uint256) {
         return ((listingItems[listingItemId].price * (100 + i_feePercent)) / 100);
+    }
+
+    /**
+     * @notice Get the details of an auction by its listing item ID
+     * @param listingItemId The ID of the auction to retrieve
+     * @return The auction details
+     */
+    function getAuction(uint256 listingItemId) external view returns (Auction memory) {
+        uint256 index = auctionIndex[listingItemId];
+        if (index < auctionHeap.length) {
+            return auctionHeap[index];
+        }
+        revert Marketplace__AuctionNotFound();
+    }
+
+    /**
+     * @notice Get the auction with the soonest end time
+     * @return The auction details
+     */
+    function getSoonestAuction() external view returns (Auction memory) {
+        if (auctionHeap.length == 0) {
+            revert Marketplace__AuctionNotFound();
+        }
+        return auctionHeap[0];
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -507,5 +597,98 @@ contract Marketplace is ReentrancyGuard {
      */
     function getOffers(uint256 listingItemId) external view returns (Offer[] memory) {
         return offers[listingItemId];
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /*//////////////////////////////////////////////////////////////
+                     MIN-HEAP OPERATIONS FOR AUCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Insert a new auction into the heap and maintain the min-heap property
+     * @param index The index of the auction to heapify up
+     */
+    function _heapifyUp(uint256 index) internal {
+        while (index > 0) {
+            uint256 parentIndex = (index - 1) / 2;
+
+            if (auctionHeap[parentIndex].endTime <= auctionHeap[index].endTime) {
+                break;
+            }
+
+            // Swap with parent
+            Auction memory temp = auctionHeap[parentIndex];
+            auctionHeap[parentIndex] = auctionHeap[index];
+            auctionHeap[index] = temp;
+
+            // Update the auction index mapping
+            auctionIndex[auctionHeap[parentIndex].listingItemId] = parentIndex;
+            auctionIndex[auctionHeap[index].listingItemId] = index;
+
+            index = parentIndex;
+        }
+    }
+
+    /**
+     * @notice Remove the root auction (soonest ending) and maintain the heap property
+     */
+    function _popAuction() internal {
+        if (auctionHeap.length == 0) {
+            revert Marketplace__AuctionNotFound();
+        }
+
+        // Delete the auction index
+        delete auctionIndex[auctionHeap[0].listingItemId];
+
+        // Move the last element to the root and pop the last element
+        auctionHeap[0] = auctionHeap[auctionHeap.length - 1]; // Move the last element to the root
+        auctionHeap.pop(); // Remove the last element
+
+        // Heapify down the new root element to restore the heap property
+        _heapifyDown(0);
+    }
+
+    /**
+     * @notice Heapify down from the root to maintain the min-heap property
+     * @param index The index of the auction to heapify down
+     */
+    function _heapifyDown(uint256 index) internal {
+        uint256 length = auctionHeap.length;
+        uint256 leftChild;
+        uint256 rightChild;
+        uint256 smallest = index;
+
+        while (true) {
+            leftChild = 2 * index + 1;
+            rightChild = 2 * index + 2;
+
+            // Find the smallest child
+            if (leftChild < length && auctionHeap[leftChild].endTime < auctionHeap[smallest].endTime) {
+                smallest = leftChild;
+            }
+
+            if (rightChild < length && auctionHeap[rightChild].endTime < auctionHeap[smallest].endTime) {
+                smallest = rightChild;
+            }
+
+            // If the current node is already in the correct position, exit
+            if (smallest == index) {
+                break;
+            }
+
+            // Swap with the smallest child
+            Auction memory temp = auctionHeap[index];
+            auctionHeap[index] = auctionHeap[smallest];
+            auctionHeap[smallest] = temp;
+
+            // Update the index map
+            auctionIndex[auctionHeap[index].listingItemId] = index;
+            auctionIndex[auctionHeap[smallest].listingItemId] = smallest;
+
+            index = smallest;
+        }
     }
 }
