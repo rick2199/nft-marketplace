@@ -8,7 +8,7 @@ build:
 
 install:
 	@echo "Installing dependencies..."
-	forge install foundry-rs/forge-std --no-commit && forge install openzeppelin/openzeppelin-contracts --no-commit
+	forge install foundry-rs/forge-std --no-commit && forge install openzeppelin/openzeppelin-contracts --no-commit && forge install smartcontractkit/chainlink-brownie-contracts --no-commit
 
 # Deploy contracts and generate ABI and address by calling the bash script
 deploy-and-generate-types: build
