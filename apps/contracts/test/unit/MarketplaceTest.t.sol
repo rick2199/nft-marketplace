@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {Marketplace} from "src/Marketplace.sol";
+import {Marketplace} from "src/marketplace/Marketplace.sol";
 import {DeployMarketplace} from "script/DeployMarketplace.s.sol";
 import {MockERC721} from "../mocks/MockERC721.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";

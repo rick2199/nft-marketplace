@@ -5,6 +5,9 @@ pragma solidity ^0.8.24;
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
+import {Auction} from "src/marketplace/Auction.sol";
+import {Offer} from "src/marketplace/Offer.sol";
+import {HeapUtils} from "src/marketplace/HeapUtils.sol";
 
 /**
  * @title Marketplace Contract
@@ -12,7 +15,7 @@ import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/inter
  * @notice This contract allows users to list and purchase NFTs
  * @dev Inherits from ReentrancyGuard to prevent reentrancy attacks
  */
-contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
+contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction, Offer {
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -23,12 +26,6 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
     error Marketplace__PaymentToSellerFailed();
     error Marketplace__PaymentOfFeeFailed();
     error Marketplace__MustBeSeller();
-    error Marketplace__MustBeBidder();
-    error Marketplace__RefundToBidderFailed();
-    error Marketplace__AuctionEnded();
-    error Marketplace__AuctionOngoing();
-    error Marketplace__BidNotHighEnough();
-    error Marketplace__AuctionNotFound();
 
     /*//////////////////////////////////////////////////////////////
                                  TYPES
@@ -42,23 +39,9 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
         bool sold;
     }
 
-    struct Offer {
-        address bidder;
-        uint256 offerAmount;
-    }
-
     struct PriceHistory {
         uint256 price;
         uint256 timestamp;
-    }
-
-    struct Auction {
-        uint256 listingItemId;
-        uint256 startPrice;
-        address payable highestBidder;
-        uint256 highestBid;
-        uint256 endTime;
-        bool ended;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -69,13 +52,9 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
     uint256 private listingItemCount;
     address private constant ZERO_ADDRESS = address(0);
 
-    Auction[] private auctionHeap; // Min-heap to store auctions by endTime
-
     mapping(uint256 listingItemId => ListingItem listingItem) private listingItems;
-    mapping(uint256 => Offer[]) public offers;
     mapping(uint256 => PriceHistory[]) public priceHistories;
     mapping(address accountToRefund => uint256 amountToRefund) public pendingReturns;
-    mapping(uint256 listingItemId => uint256 auctionIdx) public auctionIndex;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -94,9 +73,6 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
     );
 
     event ListingItemPriceUpdated(uint256 indexed listingItemId, uint256 newPrice, address indexed seller);
-    event AuctionStarted(uint256 indexed listingItemId, uint256 startPrice, uint256 endTime);
-    event NewBidPlaced(uint256 indexed listingItemId, address indexed bidder, uint256 bidAmount);
-    event AuctionEnded(uint256 indexed listingItemId, address indexed winner, uint256 winningBid);
 
     /*//////////////////////////////////////////////////////////////
                                FUNCTIONS
@@ -219,12 +195,16 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
         emit ListingItemPriceUpdated(listingItemId, newPrice, listingItem.seller);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            OFFER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /**
      * @notice Function to make an offer on a listing item
      * @param listingItemId The ID of the listing item
      * @param offerAmount The amount of the offer
      */
-    function makeOffer(uint256 listingItemId, uint256 offerAmount) external payable nonReentrant {
+    function makeOffer(uint256 listingItemId, uint256 offerAmount) external payable override nonReentrant {
         ListingItem storage listingItem = listingItems[listingItemId];
 
         if (listingItem.sold) {
@@ -236,7 +216,7 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
         }
 
         // Store the offer
-        offers[listingItemId].push(Offer({bidder: msg.sender, offerAmount: offerAmount}));
+        offers[listingItemId].push(OfferStruct({bidder: msg.sender, offerAmount: offerAmount}));
     }
 
     /**
@@ -244,18 +224,18 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
      * @param listingItemId The ID of the listing item
      * @param offerIndex The index of the offer to accept
      */
-    function acceptOffer(uint256 listingItemId, uint256 offerIndex) external nonReentrant {
+    function acceptOffer(uint256 listingItemId, uint256 offerIndex) external override nonReentrant {
         ListingItem storage listingItem = listingItems[listingItemId];
 
         if (listingItem.seller != msg.sender) {
-            revert Marketplace__MustBeSeller();
+            revert Offer__MustBeSeller();
         }
 
         if (listingItem.sold) {
             revert Marketplace__ListingItemAlreadySold();
         }
 
-        Offer memory offer = offers[listingItemId][offerIndex];
+        OfferStruct memory offer = offers[listingItemId][offerIndex];
         uint256 offeredAmount = offer.offerAmount;
         uint256 feeAmount = (offeredAmount * i_feePercent) / 100; // Calculate the fee amount
         uint256 offeredAmountAfterFee = offeredAmount - feeAmount;
@@ -292,19 +272,19 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
      * @param listingItemId The ID of the listing item
      * @param offerIndex The index of the offer to reject
      */
-    function rejectOffer(uint256 listingItemId, uint256 offerIndex) external nonReentrant {
+    function rejectOffer(uint256 listingItemId, uint256 offerIndex) external override nonReentrant {
         ListingItem storage listingItem = listingItems[listingItemId];
 
         if (listingItem.seller != msg.sender) {
-            revert Marketplace__MustBeSeller();
+            revert Offer__MustBeSeller();
         }
 
-        Offer memory offer = offers[listingItemId][offerIndex];
+        OfferStruct memory offer = offers[listingItemId][offerIndex];
 
         // Refund the bidder
         (bool successRefund,) = offer.bidder.call{value: offer.offerAmount}("");
         if (!successRefund) {
-            revert Marketplace__RefundToBidderFailed();
+            revert Offer__RefundToBidderFailed();
         }
 
         // Remove the offer
@@ -316,18 +296,18 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
      * @param listingItemId The ID of the listing item
      * @param offerIndex The index of the offer to retract
      */
-    function retractOffer(uint256 listingItemId, uint256 offerIndex) external nonReentrant {
+    function retractOffer(uint256 listingItemId, uint256 offerIndex) external override nonReentrant {
         // Ensure the offer exists and is not already accepted
-        Offer memory offer = offers[listingItemId][offerIndex];
+        OfferStruct memory offer = offers[listingItemId][offerIndex];
 
         if (offer.bidder != msg.sender) {
-            revert Marketplace__MustBeBidder();
+            revert Offer__MustBeBidder();
         }
 
         // Refund the bidder
         (bool successRefund,) = offer.bidder.call{value: offer.offerAmount}("");
         if (!successRefund) {
-            revert Marketplace__RefundToBidderFailed();
+            revert Offer__RefundToBidderFailed();
         }
 
         // Remove the offer
@@ -343,13 +323,13 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
      * @param startPrice The starting price of the auction
      * @param duration The duration of the auction (in seconds)
      */
-    function startAuction(uint256 listingItemId, uint256 startPrice, uint256 duration) external nonReentrant {
+    function startAuction(uint256 listingItemId, uint256 startPrice, uint256 duration) external override nonReentrant {
         ListingItem storage listingItem = listingItems[listingItemId];
 
         if (listingItem.seller != msg.sender) {
-            revert Marketplace__MustBeSeller();
+            revert Auction__MustBeSeller();
         }
-        Auction memory newAuction = Auction({
+        HeapUtils.AuctionStruct memory newAuction = HeapUtils.AuctionStruct({
             listingItemId: listingItemId,
             startPrice: startPrice,
             highestBidder: payable(address(0)),
@@ -364,7 +344,7 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
         uint256 index = auctionHeap.length - 1;
         auctionIndex[listingItemId] = index;
         // Heapify up to maintain the min-heap property
-        _heapifyUp(index);
+        HeapUtils._heapifyUp(auctionHeap, auctionIndex, index);
 
         emit AuctionStarted(listingItemId, startPrice, newAuction.endTime);
     }
@@ -380,7 +360,7 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
         returns (bool upkeepNeeded, bytes memory performData)
     {
         if (auctionHeap.length > 0) {
-            Auction memory soonestAuction = auctionHeap[0];
+            HeapUtils.AuctionStruct memory soonestAuction = auctionHeap[0];
 
             if (block.timestamp >= soonestAuction.endTime && !soonestAuction.ended) {
                 upkeepNeeded = true;
@@ -402,27 +382,27 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
      * @notice End an auction and transfer the NFT to the highest bidder
      * @param listingItemId The ID of the listing item being auctioned
      */
-    function endAuction(uint256 listingItemId) internal nonReentrant {
+    function endAuction(uint256 listingItemId) internal override nonReentrant {
         uint256 index = auctionIndex[listingItemId];
         if (index >= auctionHeap.length || auctionHeap[index].listingItemId != listingItemId) {
-            revert Marketplace__AuctionNotFound();
+            revert Auction__AuctionNotFound();
         }
-        Auction storage auction = auctionHeap[index];
+        HeapUtils.AuctionStruct storage auction = auctionHeap[index];
         ListingItem storage listingItem = listingItems[listingItemId];
 
         if (block.timestamp < auction.endTime) {
-            revert Marketplace__AuctionOngoing();
+            revert Auction__AuctionOngoing();
         }
 
         if (auction.ended) {
-            revert Marketplace__AuctionEnded();
+            revert Auction__AuctionEnded();
         }
 
         // Mark the auction as ended
         auction.ended = true;
 
         // Pop the auction from the heap
-        _popAuction();
+        HeapUtils._popAuction(auctionHeap, auctionIndex);
 
         if (auction.highestBidder != ZERO_ADDRESS) {
             uint256 feeAmount = (auction.highestBid * i_feePercent) / 100;
@@ -461,25 +441,25 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
      * @notice Place a bid on an active auction
      * @param listingItemId The ID of the listing item being auctioned
      */
-    function placeBid(uint256 listingItemId) external payable nonReentrant {
+    function placeBid(uint256 listingItemId) external payable override nonReentrant {
         // Find the auction by looking up the index in the heap
         uint256 index = auctionIndex[listingItemId];
 
         // Ensure the index is valid and within bounds
         if (index >= auctionHeap.length) {
-            revert Marketplace__AuctionNotFound();
+            revert Auction__AuctionNotFound();
         }
 
-        Auction storage auction = auctionHeap[index];
+        HeapUtils.AuctionStruct storage auction = auctionHeap[index];
 
         if (block.timestamp >= auction.endTime) {
-            revert Marketplace__AuctionEnded();
+            revert Auction__AuctionEnded();
         }
 
         uint256 currentBid = auction.highestBid;
 
         if (msg.value <= currentBid) {
-            revert Marketplace__BidNotHighEnough();
+            revert Auction__BidNotHighEnough();
         }
 
         // Refund the previous highest bidder
@@ -497,14 +477,14 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
     /**
      * @notice Withdraw a bidder's refundable amount if they have been outbid
      */
-    function withdrawBid() external nonReentrant {
+    function withdrawBid() external override nonReentrant {
         uint256 amount = pendingReturns[msg.sender];
         if (amount > 0) {
             pendingReturns[msg.sender] = 0;
 
             (bool success,) = msg.sender.call{value: amount}("");
             if (!success) {
-                revert Marketplace__RefundToBidderFailed();
+                revert Auction__RefundToBidderFailed();
             }
         }
     }
@@ -526,21 +506,21 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
      * @param listingItemId The ID of the auction to retrieve
      * @return The auction details
      */
-    function getAuction(uint256 listingItemId) external view returns (Auction memory) {
+    function getAuction(uint256 listingItemId) external view returns (HeapUtils.AuctionStruct memory) {
         uint256 index = auctionIndex[listingItemId];
         if (index < auctionHeap.length) {
             return auctionHeap[index];
         }
-        revert Marketplace__AuctionNotFound();
+        revert Auction__AuctionNotFound();
     }
 
     /**
      * @notice Get the auction with the soonest end time
      * @return The auction details
      */
-    function getSoonestAuction() external view returns (Auction memory) {
+    function getSoonestAuction() external view returns (HeapUtils.AuctionStruct memory) {
         if (auctionHeap.length == 0) {
-            revert Marketplace__AuctionNotFound();
+            revert Auction__AuctionNotFound();
         }
         return auctionHeap[0];
     }
@@ -595,100 +575,7 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface {
      * @param listingItemId The unique ID of the listing item
      * @return An array of Offer structs containing bidder and offerAmount
      */
-    function getOffers(uint256 listingItemId) external view returns (Offer[] memory) {
+    function getOffers(uint256 listingItemId) external view returns (OfferStruct[] memory) {
         return offers[listingItemId];
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                                HELPERS
-    //////////////////////////////////////////////////////////////*/
-
-    /*//////////////////////////////////////////////////////////////
-                     MIN-HEAP OPERATIONS FOR AUCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Insert a new auction into the heap and maintain the min-heap property
-     * @param index The index of the auction to heapify up
-     */
-    function _heapifyUp(uint256 index) internal {
-        while (index > 0) {
-            uint256 parentIndex = (index - 1) / 2;
-
-            if (auctionHeap[parentIndex].endTime <= auctionHeap[index].endTime) {
-                break;
-            }
-
-            // Swap with parent
-            Auction memory temp = auctionHeap[parentIndex];
-            auctionHeap[parentIndex] = auctionHeap[index];
-            auctionHeap[index] = temp;
-
-            // Update the auction index mapping
-            auctionIndex[auctionHeap[parentIndex].listingItemId] = parentIndex;
-            auctionIndex[auctionHeap[index].listingItemId] = index;
-
-            index = parentIndex;
-        }
-    }
-
-    /**
-     * @notice Remove the root auction (soonest ending) and maintain the heap property
-     */
-    function _popAuction() internal {
-        if (auctionHeap.length == 0) {
-            revert Marketplace__AuctionNotFound();
-        }
-
-        // Delete the auction index
-        delete auctionIndex[auctionHeap[0].listingItemId];
-
-        // Move the last element to the root and pop the last element
-        auctionHeap[0] = auctionHeap[auctionHeap.length - 1]; // Move the last element to the root
-        auctionHeap.pop(); // Remove the last element
-
-        // Heapify down the new root element to restore the heap property
-        _heapifyDown(0);
-    }
-
-    /**
-     * @notice Heapify down from the root to maintain the min-heap property
-     * @param index The index of the auction to heapify down
-     */
-    function _heapifyDown(uint256 index) internal {
-        uint256 length = auctionHeap.length;
-        uint256 leftChild;
-        uint256 rightChild;
-        uint256 smallest = index;
-
-        while (true) {
-            leftChild = 2 * index + 1;
-            rightChild = 2 * index + 2;
-
-            // Find the smallest child
-            if (leftChild < length && auctionHeap[leftChild].endTime < auctionHeap[smallest].endTime) {
-                smallest = leftChild;
-            }
-
-            if (rightChild < length && auctionHeap[rightChild].endTime < auctionHeap[smallest].endTime) {
-                smallest = rightChild;
-            }
-
-            // If the current node is already in the correct position, exit
-            if (smallest == index) {
-                break;
-            }
-
-            // Swap with the smallest child
-            Auction memory temp = auctionHeap[index];
-            auctionHeap[index] = auctionHeap[smallest];
-            auctionHeap[smallest] = temp;
-
-            // Update the index map
-            auctionIndex[auctionHeap[index].listingItemId] = index;
-            auctionIndex[auctionHeap[smallest].listingItemId] = smallest;
-
-            index = smallest;
-        }
     }
 }

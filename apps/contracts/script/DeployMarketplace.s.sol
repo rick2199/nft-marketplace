@@ -3,7 +3,7 @@
 pragma solidity ^0.8.24;
 
 import {Script} from "forge-std/Script.sol";
-import {Marketplace} from "src/Marketplace.sol";
+import {Marketplace} from "src/marketplace/Marketplace.sol";
 
 contract DeployMarketplace is Script {
     uint256 private constant FEE_PERCENT = 2;

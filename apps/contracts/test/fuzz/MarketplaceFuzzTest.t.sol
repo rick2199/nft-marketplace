@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Marketplace} from "src/Marketplace.sol";
+import {Marketplace} from "src/marketplace/Marketplace.sol";
 import {MockERC721} from "../mocks/MockERC721.sol";
 
 contract MarketplaceFuzzTest is Test {

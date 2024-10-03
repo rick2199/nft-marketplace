@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {NFT} from "src/NFT.sol";
+import {NFT} from "src/tokens/NFT.sol";
 import {DeployNFT} from "script/DeployNFT.s.sol";
 
 contract NFTTest is Test {
