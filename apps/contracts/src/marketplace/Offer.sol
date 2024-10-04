@@ -9,6 +9,7 @@ abstract contract Offer {
     error Offer__MustBeSeller();
     error Offer__MustBeBidder();
     error Offer__RefundToBidderFailed();
+    error Offer__InvalidOfferIndex();
     /*//////////////////////////////////////////////////////////////
                                  TYPES
     //////////////////////////////////////////////////////////////*/

@@ -273,13 +273,25 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
      * @param offerIndex The index of the offer to reject
      */
     function rejectOffer(uint256 listingItemId, uint256 offerIndex) external override nonReentrant {
+        // Retrieve the listing item
         ListingItem storage listingItem = listingItems[listingItemId];
 
+        // Ensure only the seller can reject the offer
         if (listingItem.seller != msg.sender) {
             revert Offer__MustBeSeller();
         }
 
-        OfferStruct memory offer = offers[listingItemId][offerIndex];
+        // Ensure the offerIndex is valid
+        OfferStruct[] storage listingOffers = offers[listingItemId]; // Get the offers array for this listing
+        uint256 offerCount = listingOffers.length;
+
+        // Check if the index is within bounds
+        if (offerIndex >= offerCount) {
+            revert Offer__InvalidOfferIndex(); // Custom error for invalid index
+        }
+
+        // Get the offer to reject
+        OfferStruct memory offer = listingOffers[offerIndex];
 
         // Refund the bidder
         (bool successRefund,) = offer.bidder.call{value: offer.offerAmount}("");
@@ -287,8 +299,13 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
             revert Offer__RefundToBidderFailed();
         }
 
-        // Remove the offer
-        delete offers[listingItemId][offerIndex];
+        // If there's more than one offer, replace the rejected one with the last one in the array
+        if (offerCount > 1 && offerIndex != offerCount - 1) {
+            listingOffers[offerIndex] = listingOffers[offerCount - 1];
+        }
+
+        // Remove the last element in the array
+        listingOffers.pop();
     }
 
     /**
@@ -297,9 +314,19 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
      * @param offerIndex The index of the offer to retract
      */
     function retractOffer(uint256 listingItemId, uint256 offerIndex) external override nonReentrant {
-        // Ensure the offer exists and is not already accepted
-        OfferStruct memory offer = offers[listingItemId][offerIndex];
+        // Retrieve the array of offers for this listing
+        OfferStruct[] storage listingOffers = offers[listingItemId];
+        uint256 offerCount = listingOffers.length;
 
+        // Ensure the offerIndex is valid
+        if (offerIndex >= offerCount) {
+            revert Offer__InvalidOfferIndex(); // Custom error for invalid index
+        }
+
+        // Retrieve the offer to be retracted
+        OfferStruct memory offer = listingOffers[offerIndex];
+
+        // Ensure the caller is the original bidder
         if (offer.bidder != msg.sender) {
             revert Offer__MustBeBidder();
         }
@@ -310,8 +337,14 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
             revert Offer__RefundToBidderFailed();
         }
 
-        // Remove the offer
-        delete offers[listingItemId][offerIndex];
+        // If there's more than one offer and the offer to be retracted is not the last one
+        if (offerCount > 1 && offerIndex != offerCount - 1) {
+            // Replace the offer to be retracted with the last offer
+            listingOffers[offerIndex] = listingOffers[offerCount - 1];
+        }
+
+        // Remove the last offer from the array
+        listingOffers.pop();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -382,7 +415,7 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
      * @notice End an auction and transfer the NFT to the highest bidder
      * @param listingItemId The ID of the listing item being auctioned
      */
-    function endAuction(uint256 listingItemId) internal override nonReentrant {
+    function endAuction(uint256 listingItemId) internal override {
         uint256 index = auctionIndex[listingItemId];
         if (index >= auctionHeap.length || auctionHeap[index].listingItemId != listingItemId) {
             revert Auction__AuctionNotFound();
@@ -401,13 +434,12 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
         // Mark the auction as ended
         auction.ended = true;
 
-        // Pop the auction from the heap
-        HeapUtils._popAuction(auctionHeap, auctionIndex);
+        // Store the ended auction in the `endedAuctions` mapping
+        endedAuctions[listingItemId] = auction;
 
         if (auction.highestBidder != ZERO_ADDRESS) {
             uint256 feeAmount = (auction.highestBid * i_feePercent) / 100;
             uint256 sellerProceeds = auction.highestBid - feeAmount;
-
             // Transfer proceeds to the seller
             (bool successSeller,) = listingItem.seller.call{value: sellerProceeds}("");
             if (!successSeller) {
@@ -435,6 +467,8 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
             );
             emit AuctionEnded(listingItemId, auction.highestBidder, auction.highestBid);
         }
+        // Pop the auction from the heap
+        HeapUtils._popAuction(auctionHeap, auctionIndex);
     }
 
     /**
@@ -458,7 +492,7 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
 
         uint256 currentBid = auction.highestBid;
 
-        if (msg.value <= currentBid) {
+        if (msg.value <= currentBid || msg.value <= auction.startPrice) {
             revert Auction__BidNotHighEnough();
         }
 
@@ -506,12 +540,21 @@ contract Marketplace is ReentrancyGuard, AutomationCompatibleInterface, Auction,
      * @param listingItemId The ID of the auction to retrieve
      * @return The auction details
      */
-    function getAuction(uint256 listingItemId) external view returns (HeapUtils.AuctionStruct memory) {
+    function getOngoingAuction(uint256 listingItemId) external view returns (HeapUtils.AuctionStruct memory) {
         uint256 index = auctionIndex[listingItemId];
         if (index < auctionHeap.length) {
             return auctionHeap[index];
         }
         revert Auction__AuctionNotFound();
+    }
+
+    /**
+     * @notice Retrieve the details of an ended auction by its listing item ID
+     * @param listingItemId The ID of the listing item whose auction details are to be retrieved
+     * @return The details of the ended auction as a HeapUtils.AuctionStruct
+     */
+    function getEndedAuction(uint256 listingItemId) external view returns (HeapUtils.AuctionStruct memory) {
+        return endedAuctions[listingItemId];
     }
 
     /**

@@ -21,6 +21,7 @@ abstract contract Auction {
     //////////////////////////////////////////////////////////////*/
     HeapUtils.AuctionStruct[] internal auctionHeap; // Min-heap to store auctions by endTime
     mapping(uint256 listingItemId => uint256 auctionIdx) internal auctionIndex;
+    mapping(uint256 => HeapUtils.AuctionStruct) public endedAuctions;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
