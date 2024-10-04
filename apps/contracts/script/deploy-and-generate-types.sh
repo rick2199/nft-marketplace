@@ -99,15 +99,19 @@ EOF
 echo "Generating TypeScript types..."
 npx typechain --target ethers-v5 --out-dir $TYPES_PATH $NFT_ABI_PATH $MARKETPLACE_ABI_PATH
 
-###################################################
-# Save both contract addresses to an environment file
-###################################################
+#############################################
+# Update Environment Variables
+#############################################
 
-echo "Saving contract addresses to environment file..."
-cat <<EOF > $ENV_FILE
+echo "Updating contract addresses in environment file..."
+# Check and update environment variables instead of overwriting
+sed -i.bak '/NEXT_PUBLIC_NFT_CONTRACT_ADDRESS/d' "$ENV_FILE"
+sed -i.bak '/NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS/d' "$ENV_FILE"
+
+cat <<EOF >> "$ENV_FILE"
 NEXT_PUBLIC_NFT_CONTRACT_ADDRESS=$NFT_CONTRACT_ADDRESS
 NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS=$MARKETPLACE_CONTRACT_ADDRESS
 EOF
 
-echo "Environment variable saved to $ENV_FILE"
+echo "Environment variables saved to $ENV_FILE"
 echo "Contract data and types saved to web."
