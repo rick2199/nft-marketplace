@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "build": "forge build",
+    "dev": "anvil",
     "generate-types": "bash ./script/generate-types.sh"
   },
   "devDependencies": {

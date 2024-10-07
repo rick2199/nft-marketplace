@@ -1,8 +1,12 @@
 {
-  "extends": "@repo/typescript-config/react-library.json",
+  "extends": "@nft-marketplace/typescript-config/react-library.json",
   "compilerOptions": {
-    "outDir": "dist"
+     "module": "ESNext",  // Change this to ESNext or NodeNext for ESM support
+    "target": "ES6",
+    "moduleResolution": "node",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
   },
-  "include": ["src"],
+  "include": ["src", "lib"],
   "exclude": ["node_modules", "dist"]
 }

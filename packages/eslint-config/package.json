@@ -1,5 +1,5 @@
 {
-  "name": "@repo/eslint-config",
+  "name": "@nft-marketplace/eslint-config",
   "version": "0.0.0",
   "private": true,
   "files": [

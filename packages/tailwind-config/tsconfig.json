@@ -1,0 +1,5 @@
+{
+  "extends": "@nft-marketplace/typescript-config/base.json",
+  "include": ["tailwind.config.ts"],
+  "exclude": ["dist", "build", "node_modules"]
+}
