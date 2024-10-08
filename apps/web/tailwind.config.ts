@@ -1,9 +1,12 @@
 import type { Config } from "tailwindcss"
-import sharedConfig from "../../packages/tailwind-config/tailwind.config"
+import config from "@nft-marketplace/ui/tailwind.config"
 
-const config: Pick<Config, "presets" | "content"> = {
-  content: ["./app/**.tsx"],
-  presets: [sharedConfig],
-}
+const webConfig = {
+  ...config,
+  presets: [config],
+  theme: {
+    extend: {},
+  },
+} satisfies Config
 
-export default config
+export default webConfig

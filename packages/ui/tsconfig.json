@@ -1,12 +1,11 @@
 {
   "extends": "@nft-marketplace/typescript-config/react-library.json",
   "compilerOptions": {
-     "module": "ESNext",  // Change this to ESNext or NodeNext for ESM support
-    "target": "ES6",
-    "moduleResolution": "node",
-    "jsx": "react-jsx",
-    "jsxImportSource": "react"
+    "baseUrl": ".",
+    "paths": {
+      "@nft-marketplace/ui/*": ["./src/*"]
+    }
   },
-  "include": ["src", "lib"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src"],
+  "exclude": ["node_modules"]
 }

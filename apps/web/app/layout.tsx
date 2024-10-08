@@ -1,10 +1,10 @@
 import type { Metadata } from "next"
 import localFont from "next/font/local"
 import { headers } from "next/headers"
-import "./globals.css"
-import "@nft-marketplace/ui/styles.css"
+import "@nft-marketplace/ui/globals.css"
 import "@rainbow-me/rainbowkit/styles.css"
 import Providers from "./providers"
+import Layout from "../components/layout"
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -29,7 +29,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        <Providers cookie={cookie}>{children}</Providers>
+        <Providers cookie={cookie}>
+          <Layout>{children}</Layout>
+        </Providers>
       </body>
     </html>
   )

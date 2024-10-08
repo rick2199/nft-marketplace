@@ -3,7 +3,7 @@
 import { cookieToInitialState, WagmiProvider } from "wagmi"
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { config } from "../lib/wagmiConfig"
+import { config } from "../lib/wagmi/config"
 
 const queryClient = new QueryClient()
 
